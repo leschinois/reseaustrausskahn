@@ -1,18 +1,19 @@
-OCAMLBUILD=ocamlbuild -classic-display \
-		-tags annot,debug,thread \
-		-libs unix
-TARGET=native
+OC=ocamlc
+LIBS=-thread unix.cma threads.cma
 
-example:
-	ocamlc -o ex -I tkahn -I skahn -thread unix.cma threads.cma tkahn/i.ml skahn/kahn.ml example.ml
-	
-## $(OCAMLBUILD) example.$(TARGET)
+example: example.exe
 
+%.exe: skahn/kahn.cmo tkahn/i.cmo %.ml
+	$(OC) $(LIBS) -o $@ -I skahn -I tkahn \
+$^
+
+%.cmo: %.ml
+	$(OC) -c -o $@ $(LIBS) $<
 
 clean:
 	rm -f *.cm[xoi] */*.cm[xoi] */*.o
 
 realclean: clean
-	rm -f *~ */*~
+	rm -f *~ */*~ *.exe
 
 cleanall: realclean
