@@ -4,14 +4,15 @@ OCAMLBUILD=ocamlbuild -classic-display \
 TARGET=native
 
 example:
-	$(OCAMLBUILD) example.$(TARGET)
+	ocamlc -o ex -I tkahn -I skahn -thread unix.cma threads.cma tkahn/i.ml skahn/kahn.ml example.ml
+	
+## $(OCAMLBUILD) example.$(TARGET)
 
 
 clean:
-	rm -rf *\~
-	$(OCAMLBUILD) -clean
+	rm -f *.cm[oi]
 
 realclean: clean
-	rm -f *~
+	rm -f *~ */*~
 
 cleanall: realclean

@@ -1,6 +1,6 @@
-module Example (K : Kahn.S) = struct
+module Example (K : I.S) = struct
   module K = K
-  module Lib = Kahn.Lib(K)
+  module Lib = I.Lib(K)
   open Lib
 
   let integers (qo : int K.out_port) : unit K.process =
@@ -21,6 +21,6 @@ module Example (K : Kahn.S) = struct
 
 end
 
-module E = Example(Kahn.Th)
+module E = Example(Kahn)
 
 let () = E.K.run E.main
