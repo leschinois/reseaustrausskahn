@@ -8,6 +8,7 @@ example:
 
 
 clean:
+	rm -rf *\~
 	$(OCAMLBUILD) -clean
 
 realclean: clean
