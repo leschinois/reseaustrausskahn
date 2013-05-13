@@ -10,7 +10,7 @@ example:
 
 
 clean:
-	rm -f *.cm[xoi] */*.cm[xoi] */*.o
+	rm -f *.cm[xoi] */*.cm[xoi]
 
 realclean: clean
 	rm -f *~ */*~
