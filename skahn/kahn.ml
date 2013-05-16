@@ -1,3 +1,8 @@
+(* Sequential implementation of Kahn networks *)
+
+(* Running a process makes it progress by one time step *)
+(* If the process has not yet terminated, return the remaining computation *)
+(* If it has terminated, return value *)
 type 'a process = unit -> 'a result
 and 'a result =
   | Proc of 'a process
@@ -17,6 +22,7 @@ let rec get o () =
     Res (Queue.pop o)
   with Queue.Empty -> Proc (get o)
 
+(* All processes in the list progress at the same speed *)
 let rec doco l =
   let rec exec = function
     | [] -> []
