@@ -1,0 +1,20 @@
+\documentclass[a4paper]{article}
+
+\usepackage[english]{babel}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{fullpage}
+\usepackage{pgf}
+\usepackage{tikz}
+
+\begin{document}
+
+\title{Kahn networks implementation}
+\author{Christophe Cordero, Li-yao Xia}
+\date{\today}
+
+\maketitle
+
+\section{}
+
+\end{document}
