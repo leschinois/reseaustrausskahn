@@ -3,9 +3,11 @@ LIBS=-thread unix.cma threads.cma
 
 example: example.exe
 
-%.exe: skahn/kahn.cmo tkahn/i.cmo %.ml
-	$(OC) $(LIBS) -o $@ -I skahn -I tkahn \
-$^
+%.exe: %.ml skahn/kahn.ml pkahn/kahn.ml tkahn/i.cmo
+	$(OC) $(LIBS) -o $@ -I tkahn -I skahn\
+ tkahn/i.ml skahn/kahn.ml $<
+	$(OC) $(LIBS) -o $@ -I tkahn -I pkahn\
+ tkahn/i.ml pkahn/kahn.ml $<
 
 %.cmo: %.ml
 	$(OC) -c -o $@ $(LIBS) $<
