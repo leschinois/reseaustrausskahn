@@ -24,7 +24,9 @@ end
 
 let doco liste () = 
   let pid = List.map fork liste in
-  List.iter (fun x -> ignore (waitpid [] x)) pid
+  for i = 1 to List.length pid do
+    ignore (wait ())
+  done
 
 let return x () = x
 
