@@ -24,11 +24,11 @@ end
 
 let doco liste () = 
   let pid = List.map fork liste in
-  List.iter (fun x -> ignore (waitpid [] x)) pid   
+  List.iter (fun x -> ignore (waitpid [] x)) pid
 
 let return x () = x
 
-let bind p q = q (p ())
+let bind p q () = q (p ()) ()
 
 let run f = f ()  
 
