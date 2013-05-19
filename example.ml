@@ -11,7 +11,7 @@ module Example (K : I.S) = struct
 
   let output (qi : int K.in_port) : unit K.process =
     let rec loop () =
-      (K.get qi) >>= (fun v -> Format.printf "%d@." v; loop ())
+      (K.get qi) >>= (fun v -> Format.printf "\r%d@?" v; loop ())
     in
     loop ()
 
