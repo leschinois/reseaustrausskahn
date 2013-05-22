@@ -15,6 +15,9 @@ example: example.exe
 report: report/report.tex
 	pdflatex report/report.tex
 
+archive:
+	tar -czf cordero-xia.tgz Makefile example.ml
+
 clean:
 	rm -f *.cm[xoi] */*.cm[xoi] */*.o
 
