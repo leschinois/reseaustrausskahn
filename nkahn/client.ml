@@ -25,6 +25,7 @@ let client () =
     done
   with
   | End_of_file
+  | Sys_error _
   | Unix_error (ECONNRESET,"",_) -> exit 0
 
 let () =

@@ -165,12 +165,17 @@ let client_handler s =
         | Some (p,k) ->
             begin
               try deal_with chan p k
-              with End_of_file ->
+              with
+              | Unix_error (ECONNRESET,s,_) ->
+                  Printf.eprintf "%s" s;
+                  exit 2
+              | Sys_error _
+              | End_of_file ->
                 push (p,k) tasks;
                 close_c chan;
                 Thread.exit ()
             end
-        | None -> Thread.yield ()
+        | None -> Thread.delay 0.1
     end;
     handler ()
   in handler ()

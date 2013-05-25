@@ -54,8 +54,10 @@ let rec run = function
   | Res (x,_) -> Printf.printf "End\n%!"; x
   | Doco (l,p) ->
       new_task_list l (Res((),0)(*dummy*)) (-1);
-      while not (Queue.is_empty tasks.fifo) do
+      while (Mutex.lock tn_mutex; 0 <> Hashtbl.length tasknumber) do
+        Mutex.unlock tn_mutex;
         sleep 1
       done;
+      Mutex.unlock tn_mutex;
       run p
   | Proc p -> run (p max_int)
