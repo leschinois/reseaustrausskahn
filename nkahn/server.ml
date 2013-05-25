@@ -1,6 +1,8 @@
 open Unix
 open Queue
 
+exception Break
+
 type 'a process =
   | Proc of (int -> 'a process)
   | Doco of (unit process list*'a process)
@@ -13,11 +15,23 @@ type request =
   | New_channel
   | Return of unit process
 
-type 'a queue = { fifo:'a t ; mut:Mutex.t}
+type 'a queue = { fifo:'a t; mut:Mutex.t}
 type 'a port = 'a queue
+
+type io_socket = {
+  origin:file_descr;
+  in_chan:in_channel;
+  out_chan:out_channel;
+}
 
 let time_out = 10
 
+let string_of_sockaddr = function
+  | ADDR_UNIX s -> s
+  | ADDR_INET (i,p) -> Printf.sprintf "%s:%d" (string_of_inet_addr i) p
+
+(* We keep port as a reference because we will find the first available
+ * port and need its value in the future *)
 let server_name,port =
   let port = ref 10000 in
   let server_name = ref "" in
@@ -29,27 +43,33 @@ let server_name,port =
   Arg.parse spec (fun _ -> ()) usage;
   (!server_name,port)
 
-let send out_chan x =
+let channel_of_descr s = {
+  origin=s;
+  in_chan=in_channel_of_descr s;
+  out_chan=out_channel_of_descr s;
+}
+
+let send {out_chan=out_chan} x =
   Marshal.to_channel out_chan x [Marshal.Closures];
   flush out_chan
 
-let recv in_chan =
+let recv {in_chan=in_chan} =
   Marshal.from_channel in_chan
 
 let create () = {fifo=create();mut=Mutex.create()}
 
-let push x queue =
-  Mutex.lock queue.mut;
-  push x queue.fifo;
-  Mutex.unlock queue.mut
+let push x {fifo=fifo;mut=mut} =
+  Mutex.lock mut;
+  push x fifo;
+  Mutex.unlock mut
 
-let pop queue =
-  Mutex.lock queue.mut;
+let pop {fifo=fifo;mut=mut} =
+  Mutex.lock mut;
   try
-    let y = pop queue.fifo in
-    Mutex.unlock queue.mut;
+    let y = pop fifo in
+    Mutex.unlock mut;
     Some y
-  with Empty -> Mutex.unlock queue.mut; None
+  with Empty -> Mutex.unlock mut; None
 
 let tasks = create ()
 
@@ -65,61 +85,74 @@ let fresh_create () =
     Mutex.unlock fresh_mutex;
     x
 
-let fresh = fresh_create ()
-let fresh2 = fresh_create ()
+let fresh_chan = fresh_create ()
+
+let fresh_task = fresh_create ()
 
 let tn_mutex = Mutex.create ()
 let tasknumber = Hashtbl.create 100
 
-let unpack k = function
-  | Proc _ as p -> push (p,k) tasks
-  | Doco (l,p) ->
-      let k2 = fresh2 () in
+(* Assignate a value to new task list
+ * and add it to queue tasks *)
+let new_task_list l p k =
+  if l <> [] then
+    begin
+      let k2 = fresh_task () in
       Mutex.lock tn_mutex;
       Hashtbl.add tasknumber k2 (List.length l,p,k);
       Mutex.unlock tn_mutex;
       List.iter (fun q -> push (q,k2) tasks) l
-  | Res ((),_) ->
-      Mutex.lock tn_mutex;
-      let m,p,k2 = Hashtbl.find tasknumber k in
-      if m = 1 then
-        begin
-          Hashtbl.remove tasknumber k;
-          if k2 > -1 then push (p,k2) tasks
-        end
-      else
-        Hashtbl.replace tasknumber k (m-1,p,k2);
-      Mutex.unlock tn_mutex
+    end
+  else
+    push (p,k) tasks
 
-let rec deal_with k i_c o_c =
-  let cont = ref true in
-  begin
-    match recv i_c with
-      | Put (i,x) -> push x (Hashtbl.find ports i)
-      | Get i -> send o_c (pop (Hashtbl.find ports i))
-      | New_channel -> Hashtbl.add ports (fresh ()) (create ());
-          send o_c (fresh ())
-      | Return p -> unpack k p; cont := false
-  end;
-  Thread.yield ();
-  if !cont then deal_with k i_c o_c
+let task_out k =
+  Mutex.lock tn_mutex;
+  let m,p,k2 = Hashtbl.find tasknumber k in
+  if m=1 then
+    begin
+      Hashtbl.remove tasknumber k;
+      if k > -1 (* i.e. not a primitive task *) then
+        push (p,k2) tasks
+    end
+    else
+      Hashtbl.replace tasknumber k (m-1,p,k2);
+    Mutex.unlock tn_mutex
+
+let unpack k = function
+  | Proc _ as p -> push (p,k) tasks
+  | Doco (l,p) -> new_task_list l p k
+  | Res ((),_) -> task_out k
+
+let track chan k =
+  let rec deal () =
+      Thread.yield ();
+      match recv chan with
+      | Put (i,x) -> push x (Hashtbl.find ports i); deal ()
+      | Get i -> send chan (pop (Hashtbl.find ports i)); deal ()
+      | New_channel ->
+          let c = fresh_chan () in
+          Hashtbl.add ports c (create ());
+          send chan c;
+          deal ()
+      | Return p -> unpack k p
+  in
+  deal ()
+
+let deal_with chan p k =
+  send chan p;
+  track chan k
 
 let client_handler s =
-  let in_chan = in_channel_of_descr s in
-  let out_chan = out_channel_of_descr s in
+  let chan = channel_of_descr s in
   let rec handler () =
     begin
       match pop tasks with
-        | Some (p,k) -> send out_chan p;
-            deal_with k in_chan out_chan
+        | Some (p,k) -> deal_with chan p k 
         | None -> Thread.yield ()
     end;
     handler ()
   in handler ()
-
-let string_of_sockaddr = function
-  | ADDR_UNIX s -> s
-  | ADDR_INET (i,p) -> Printf.sprintf "%s:%d" (string_of_inet_addr i) p
 
 let rec accepter s =
   let s1,a = accept s in
@@ -144,13 +177,13 @@ let server () =
         incr port
   done;
   listen s 10;
-  let first_call () =
+  (* First connection *)
+  let first_connect () =
     let s1,_ = accept s in
-    let i_c = in_channel_of_descr s1 in
-    let o_c = out_channel_of_descr s1 in
-    deal_with (-1) i_c o_c
+    let chan = channel_of_descr s1 in
+    track chan (-1)
   in
-  let _ = Thread.create first_call () in
+  let _ = Thread.create first_connect () in
   let _ = Thread.create accepter s in
   ()
 

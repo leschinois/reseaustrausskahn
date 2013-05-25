@@ -9,21 +9,21 @@ type 'a in_port = int
 type 'a out_port = int
 
 let new_channel () =
-  send out_chan New_channel;
-  let c = (recv in_chan:int) in
+  send chan New_channel;
+  let c = (recv chan:int) in
   c,c
 
 let put x i =
   Proc (fun n ->
-    send out_chan (Put (i,Marshal.to_string x [Marshal.Closures]));
+    send chan (Put (i,Marshal.to_string x [Marshal.Closures]));
     Res ((),n))
 
 let rec get o =
   let rec ask = function
     | 0 -> get o
     | n ->
-    send out_chan (Get o);
-    match (recv in_chan:string option) with
+    send chan (Get o);
+    match (recv chan:string option) with
       | Some x -> Res ((Marshal.from_string x 0),n)
       | None -> ask (n-1)
   in
@@ -53,9 +53,7 @@ let rec bind p q = match p with
 let rec run = function
   | Res (x,_) -> x
   | Doco (l,p) ->
-      let k = fresh () in
-      Hashtbl.add tasknumber k (List.length l,Res((),0)(*Dummy*),-1);
-      List.iter (fun q-> push (q,k) tasks) l;
+      new_task_list l (Res((),0)(*dummy*)) (-1);
       while not (Queue.is_empty tasks.fifo) do
         sleep 1
       done;
