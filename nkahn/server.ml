@@ -18,7 +18,7 @@ type request =
 type 'a queue = { fifo:'a t; mut:Mutex.t}
 type 'a port = 'a queue
 
-type io_socket = {
+type io_channel = {
   origin:file_descr;
   in_chan:in_channel;
   out_chan:out_channel;
@@ -29,6 +29,18 @@ let time_out = 10
 let string_of_sockaddr = function
   | ADDR_UNIX s -> s
   | ADDR_INET (i,p) -> Printf.sprintf "%s:%d" (string_of_inet_addr i) p
+
+let sleep_float t =
+  let timeout = gettimeofday () +. t in
+  let rec s t =
+    try ignore (select [] [] [] t)
+    with
+      | Unix_error (EINTR,"select","") ->
+          let now = gettimeofday () in
+          let rem = timeout -. now in
+          if rem > 0. then s rem
+  in s t
+      
 
 (* We keep port as a reference because we will find the first available
  * port and need its value in the future *)
@@ -48,6 +60,8 @@ let channel_of_descr s = {
   in_chan=in_channel_of_descr s;
   out_chan=out_channel_of_descr s;
 }
+
+let close_c {origin=s} = close s
 
 let send {out_chan=out_chan} x =
   Marshal.to_channel out_chan x [Marshal.Closures];
@@ -148,9 +162,15 @@ let client_handler s =
   let rec handler () =
     begin
       match pop tasks with
-        | Some (p,k) -> deal_with chan p k 
+        | Some (p,k) ->
+            begin
+              try deal_with chan p k
+              with End_of_file -> push (p,k) tasks; close_c chan;
+Thread.exit ()
+            end
         | None -> Thread.yield ()
     end;
+    sleep_float 0.5;
     handler ()
   in handler ()
 
