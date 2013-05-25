@@ -51,7 +51,7 @@ let rec bind p q = match p with
   | Res _ -> assert false
 
 let rec run = function
-  | Res (x,_) -> x
+  | Res (x,_) -> Printf.printf "End\n%!"; x
   | Doco (l,p) ->
       new_task_list l (Res((),0)(*dummy*)) (-1);
       while not (Queue.is_empty tasks.fifo) do

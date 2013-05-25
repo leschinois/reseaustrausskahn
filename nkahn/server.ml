@@ -165,12 +165,13 @@ let client_handler s =
         | Some (p,k) ->
             begin
               try deal_with chan p k
-              with End_of_file -> push (p,k) tasks; close_c chan;
-Thread.exit ()
+              with End_of_file ->
+                push (p,k) tasks;
+                close_c chan;
+                Thread.exit ()
             end
         | None -> Thread.yield ()
     end;
-    sleep_float 0.5;
     handler ()
   in handler ()
 
