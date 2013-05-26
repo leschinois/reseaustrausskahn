@@ -1,31 +1,45 @@
 OC=ocamlc
 LIBS=-thread unix.cma threads.cma
+SFILE=-I skahn skahn/kahn.ml
+TFILE=-I tkahn tkahn/kahn.ml
+PFILE=-I pkahn pkahn/kahn.ml
+NFILE=-I nkahn nkahn/server.ml nkahn/client.ml nkahn/kahn.ml
+FILE=$(NFILE)
 
-example: example.exe
+example: example.socket
 
 .PHONY: example
 
-seq: skahn/kahn.ml
+cc:
+	$(OC) -o $@ $(LIBS) $(FILE)
 
-%.exe: %.ml skahn/kahn.ml pkahn/kahn.ml nkahn/kahn.ml tkahn/i.cmo
-	$(OC) $(LIBS) -o $@.n -I tkahn -I nkahn\
- tkahn/i.ml nkahn/server.ml nkahn/client.ml nkahn/kahn.ml $<
-	$(OC) $(LIBS) -o $@.s -I tkahn -I skahn\
- tkahn/i.ml skahn/kahn.ml $<
-	$(OC) $(LIBS) -o $@.p -I tkahn -I pkahn\
- tkahn/i.ml pkahn/kahn.ml $<
+%.seq: %.ml
+	FILE="$(SFILE)"
+	$(OC) -o $@ $(LIBS) $(FILE) i.ml $<
 
-%.cmo: %.ml
-	$(OC) -c -o $@ $(LIBS) $<
+%.th: %.ml
+	FILE="$(TFILE)"
+	$(OC) -o $@ $(LIBS) $(FILE) i.ml $<
 
-report: report/report.tex
+%.pipe: %.ml
+	FILE="$(PFILE)"
+	$(OC) -o $@ $(LIBS) $(FILE) i.ml $<
+
+%.socket: %.ml
+	FILE="$(NFILE)"
+	$(OC) -o $@ $(LIBS) $(FILE) i.ml $<
+
+report: report/report.pdf
+
+report.pdf: report/report.tex
 	pdflatex report/report.tex
 
-archive:
-	tar -czf cordero-xia.tgz Makefile example.ml
+archive: report.pdf
+	tar -czf cordero-xia.tgz Makefile example.ml eratosthenes.ml \
+	nkahn skahn pkahn tkahn report.pdf demo
 
 clean:
-	rm -f *.cm[xoi] */*.cm[xoi] */*.o *.o */*.cmxa */*.a
+	rm -f *.cm[xoi] */*.cm[xoi] */*.o *.o */*.cmxa */*.a *.aux *.log 
 
 realclean: clean
 	rm -f *~ */*~ *.exe
