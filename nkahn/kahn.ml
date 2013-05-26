@@ -13,61 +13,49 @@ let new_channel () =
   let c = (recv chan:int) in
   c,c
 
-let put x i =
-  Proc (fun n ->
-    send chan (Put (i,Marshal.to_string x [Marshal.Closures]));
-    Res ((),n))
+let put x i n =
+  Printf.printf "p%!";
+  send chan (Put (i,Marshal.to_string x [Marshal.Closures]));
+  Printf.printf "ut\n%!";
+  Res ((),n)
 
 let rec get o =
   let rec ask = function
-    | 0 -> get o
+    | 0 -> Proc (get o)
     | n ->
+        Printf.printf "g%!";
         send chan (Get o);
+        Printf.printf "et\n%!";
         match (recv chan:string option) with
         | Some x -> Res ((Marshal.from_string x 0),n)
         | None -> ask (n-1)
-  in
-  Proc ask
+  in ask
 
-let return x = Proc (fun n -> Res (x,n))
+let return x n = Res (x,n)
 
-let doco l = Doco (l,return ())
+let doco l n = Doco (l,return ())
 
-let rec bind p q =
-  match p with
-  | Proc f ->
-      Proc (
-        fun n ->
-          match f (n-1) with
-          | Res (x,m) ->
-              begin
-                match q x with
-                | Proc g as r -> if m > 0 then g m else r
-                | Doco (_,_) as q732 -> q732
-                | Res _ -> assert false
-              end
-          | Doco (l,p789) -> Doco (l, bind p789 q)
-          | p2342 -> bind p2342 q
-       )
-  | Doco (l,p789) -> Doco (l,bind p789 q)
-  | Res _ -> assert false
+let rec bind p q = function
+  | 0 -> Proc (bind p q)
+  | n ->
+      match p (n-1) with
+      | Proc p1 -> Proc (bind p1 q)
+      | Doco (l,p789) -> Doco (l, bind p789 q)
+      | Res (x,m) -> q x m
+      | Unit -> assert false
 
-let run p =
-  let rec run = function
-    | Res (x,_) -> x
-    | Doco (l,p) ->
-        if l <> [] then begin
-          new_task_list l (Res((),0)(*dummy*)) (-1);
-          while (Mutex.lock tn_mutex; 0 <> Hashtbl.length tasknumber) do
-            Mutex.unlock tn_mutex;
-            sleep 1
-          done;
-          Mutex.unlock tn_mutex
-        end;
-        run p
-    | Proc p -> run (p max_int)
-  in
-  Printf.printf "Run: start\n%!";
-  let x = run p in
-  Printf.printf "Run: end. Time %.1fs\n%!" (elapsed ());
-  x
+let rec run p =
+  match p max_int with
+  | Doco (l,p) ->
+      if l <> [] then begin
+        new_task_list l (fun _ -> Unit(*dummy*)) (-1);
+        while (Mutex.lock tn_mutex; 0 <> Hashtbl.length tasknumber) do
+          Mutex.unlock tn_mutex;
+          sleep 1
+        done;
+        Mutex.unlock tn_mutex
+      end;
+      run p
+  | Proc q -> run q
+  | Res (x,_) -> x
+  | Unit -> assert false

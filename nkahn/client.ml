@@ -19,15 +19,23 @@ let elapsed =
   let start = gettimeofday () in
   fun () -> gettimeofday () -. start
 
+let ret = function
+  | Proc _
+  | Doco _ as p -> Return p
+  | Res ((),_) -> Return Unit
+  | Unit -> assert false
+
 let client () =
   try
     let notime = timer < 0. in
     while (notime || elapsed ()<timer) do
       send chan true;
-      match (recv chan : unit process) with
-        | Proc p -> send chan (Return (p time_out))
-        | Doco (_,_) as p -> send chan (Return p)
-        | Res _ -> assert false
+      if recv chan then begin
+        let p = (recv chan : unit process) in
+        let res = p time_out in
+        Printf.eprintf "a\n%!";
+        send chan (ret res)
+      end
     done;
     send chan false;
     exit 0

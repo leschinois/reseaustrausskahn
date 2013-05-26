@@ -5,13 +5,13 @@ module Example (K : I.S) = struct
 
   let integers (qo : int K.out_port) : unit K.process =
     let rec loop n =
-      (K.put n qo) >>= (fun () -> loop (n + 1))
+      (K.put n qo) >>= (fun () -> Printf.printf "a\n%!"; loop (n + 1))
     in
     loop 2
 
   let output (qi : int K.in_port) : unit K.process =
     let rec loop () =
-      (K.get qi) >>= (fun v -> Format.printf "\r%d@?" v; loop ())
+      (K.get qi) >>= (fun v -> Printf.printf "a\n%!";Format.printf "\r%d@?" v; loop ())
     in
     loop ()
 

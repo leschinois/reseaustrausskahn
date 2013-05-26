@@ -1,34 +1,36 @@
 open Unix
 open Queue
 
-type 'a process =
-  | Proc of (int -> 'a process)
-  | Doco of (unit process list*'a process)
-  | Res of ('a*int)
+type 'a process = int -> 'a result
+and 'a result =
+  | Proc of 'a process
+  | Doco of unit process list * 'a process
+  | Res of 'a * int
+  | Unit
 
 (* Client to server *)
 type request =
-  | Put of int*string
+  | Put of int * string
   | Get of int
   | New_channel
-  | Return of unit process
+  | Return of unit result
 
 type response =
   | Elt of string
   | Get_resp of string option
   | Chan of int
 
-exception Unfinished of unit process*int*(response list*int)
+exception Unfinished of unit process * int * (response list * int)
 
-let no_past = [],0
+type past = response list * int
+let no_past:past = [],0
 
-type 'a queue = { fifo:'a t; mut:Mutex.t}
-type 'a port = 'a queue
+type 'a queue = { fifo : 'a t; mut : Mutex.t}
 
 type io_channel = {
-  origin:file_descr;
-  in_chan:in_channel;
-  out_chan:out_channel;
+  origin : file_descr;
+  in_chan : in_channel;
+  out_chan : out_channel;
 }
 
 let elapsed =
@@ -89,11 +91,12 @@ let pop {fifo=fifo;mut=mut} =
     Some y
   with Empty -> Mutex.unlock mut; None
 
-let tasks = create ()
+let tasks : (unit process * int * past) queue = create ()
 
-let ports = Hashtbl.create 100
+let ports : (int,string queue) Hashtbl.t = Hashtbl.create 100
 
-let fresh_create () =
+(* Fresh secure counter *)
+let fresh_create () : unit -> int =
   let fresh_mutex = Mutex.create () in
   let fresh = ref 0 in
   fun () ->
@@ -106,8 +109,9 @@ let fresh_create () =
 let fresh_chan = fresh_create ()
 let fresh_task = fresh_create ()
 
+(* Keep track of task tree *)
 let tn_mutex = Mutex.create ()
-let tasknumber = Hashtbl.create 100
+let tasknumber : (int,int*unit process*int) Hashtbl.t= Hashtbl.create 100
 
 (* Assignate a value to new task list
  * and add it to queue tasks *)
@@ -137,36 +141,43 @@ let task_out k =
     Mutex.unlock tn_mutex
 
 let unpack k past = function
-  | Proc _ as p -> push (p,k,past) tasks
+  | Proc p -> push (p,k,past) tasks
   | Doco (l,p) -> new_task_list l p k
-  | Res ((),_) -> task_out k
+  | Unit -> task_out k
+  | Res _ -> assert false
 
 let track chan k (to_send,to_recv) add_sent add_rcvd =
   let rec deal () =
       Thread.yield ();
+      Printf.printf "deal";
       match recv chan with
       | Put (i,x) ->
+      Printf.printf "put\n%!";
           add_rcvd (Elt x);
           push x (Hashtbl.find ports i);
           deal ()
       | Get i ->
+      Printf.printf "get\n%!";
           let y = pop (Hashtbl.find ports i) in
           add_sent (Get_resp y);
           send chan y;
           deal ()
       | New_channel ->
+      Printf.printf "chan\n%!";
           let c = fresh_chan () in
           Hashtbl.add ports c (create ());
           add_sent (Chan c);
           send chan c;
           deal ()
-      | Return p -> unpack k no_past p
+      | Return p -> 
+          Printf.printf "Ret\n%!";unpack k no_past p
   in
   let rec redeal l y =
     if l = [] && y = 0 then
       deal ()
     else begin
       Thread.yield ();
+      Printf.printf "redeal\n%!";
       match recv chan,l with
       | Put (_,_),_ when y > 0 -> redeal l (y-1)
       | Get _,Get_resp s::t ->
@@ -191,9 +202,9 @@ let deal_with chan p k r =
   let add_sent x = sent := x :: !sent in
   let add_rcvd _ = incr rcvd in
   try
-    send chan p;
+    send chan (fun x-> Printf.eprintf "HA%!"; p x);
     track chan k r add_sent add_rcvd
-  with _ -> raise (Unfinished (p,k,(!sent,!rcvd)))
+  with _ -> raise (Unfinished (p,k,(List.rev !sent,!rcvd)))
 
 let client_handler s a =
   let chan = channel_of_descr s in
@@ -206,7 +217,9 @@ let client_handler s a =
         match pop tasks with
           | Some (p,k,r) ->
               begin
-                try deal_with chan p k r
+                try
+                  send chan true;
+                  deal_with chan p k r
                 with
                 | Unfinished (p,k,r) ->
                     push (p,k,r) tasks;
@@ -214,7 +227,7 @@ let client_handler s a =
                     disconnected ();
                     Thread.exit ()
               end
-          | None -> Thread.delay 0.1
+          | None -> send chan false; Thread.delay 0.1
       end;
       handler () end
   in

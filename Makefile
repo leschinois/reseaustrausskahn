@@ -1,5 +1,5 @@
-OC=ocamlopt
-LIBS=-thread unix.cmxa threads.cmxa
+OC=ocamlc
+LIBS=-thread unix.cma threads.cma
 
 example: example.exe
 
@@ -23,7 +23,7 @@ archive:
 	tar -czf cordero-xia.tgz Makefile example.ml
 
 clean:
-	rm -f *.cm[xoi] */*.cm[xoi] */*.o
+	rm -f *.cm[xoi] */*.cm[xoi] */*.o *.o */*.cmxa */*.a
 
 realclean: clean
 	rm -f *~ */*~ *.exe
