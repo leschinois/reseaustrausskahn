@@ -3,15 +3,21 @@ module Example (K : I.S) = struct
   module Lib = I.Lib(K)
   open Lib
 
+  let bound = 100000
+
   let integers (qo : int K.out_port) : unit K.process =
     let rec loop n =
-      (K.put n qo) >>= (fun () -> Printf.printf "a\n%!"; loop (n + 1))
+      (K.put n qo) >>= (fun () ->
+        if n = bound then
+          K.put 0 qo
+        else loop (n + 1))
     in
     loop 2
 
   let output (qi : int K.in_port) : unit K.process =
     let rec loop () =
-      (K.get qi) >>= (fun v -> Printf.printf "a\n%!";Format.printf "\r%d@?" v; loop ())
+      (K.get qi) >>= (fun v -> Format.printf "\r%d@?" v;
+        if v > 0 then loop () else K.return ())
     in
     loop ()
 
@@ -23,4 +29,7 @@ end
 
 module E = Example(Kahn)
 
-let () = E.K.run E.main
+let () =
+  let start = Unix.time () in
+  E.K.run E.main;
+  Printf.printf "Time: %.0fs\n%!" (Unix.time ()-.start)

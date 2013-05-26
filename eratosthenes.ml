@@ -56,4 +56,7 @@ end
 
 module E = Example(Kahn)
 
-let () = E.K.run E.main
+let () =
+  let start = Unix.time () in
+  E.K.run E.main;
+  Printf.printf "Time: %.0fs\n%!" (Unix.time ()-.start)

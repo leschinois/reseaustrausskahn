@@ -6,7 +6,7 @@ and 'a result =
   | Proc of 'a process
   | Doco of unit process list * 'a process
   | Res of 'a * int
-  | Unit
+  | U
 
 (* Client to server *)
 type request =
@@ -146,10 +146,11 @@ let task_out k =
 let unpack k past = function
   | Proc p -> push (p,k,past) tasks
   | Doco (l,p) -> new_task_list l p k
-  | Unit -> task_out k
+  | U -> task_out k
   | Res _ -> assert false
 
 let track chan k (to_send,to_recv) add_sent add_rcvd =
+(*
   let wait_proc {origin=s} t =
     let timeout = gettimeofday () +. t in
     let rec wait_p t =
@@ -157,44 +158,37 @@ let track chan k (to_send,to_recv) add_sent add_rcvd =
       with Unix_error (EINTR,"select","") ->
         let rem = timeout -. gettimeofday () in
         if rem > 0. then wait_p rem
-        else []
+        else [],[],[]
     in
     let r,_,_ = wait_p t in
     r = []
-  in
+  in*)
   let rec deal () =
       Thread.yield ();
-      Printf.printf "deal";
-      if wait_proc s 1. then
-        raise Break; (* Program is assumed to be hanging *)
       match recv chan with
       | Put (i,x) ->
-      Printf.printf "put\n%!";
           add_rcvd (Elt x);
           push x (Hashtbl.find ports i);
           deal ()
       | Get i ->
-      Printf.printf "get\n%!";
           let y = pop (Hashtbl.find ports i) in
           add_sent (Get_resp y);
           send chan y;
           deal ()
       | New_channel ->
-      Printf.printf "chan\n%!";
           let c = fresh_chan () in
           Hashtbl.add ports c (create ());
           add_sent (Chan c);
           send chan c;
           deal ()
       | Return p -> 
-          Printf.printf "Ret\n%!";unpack k no_past p
+          unpack k no_past p
   in
   let rec redeal l y =
     if l = [] && y = 0 then
       deal ()
     else begin
       Thread.yield ();
-      Printf.printf "redeal\n%!";
       match recv chan,l with
       | Put (_,_),_ when y > 0 -> redeal l (y-1)
       | Get _,Get_resp s::t ->
@@ -219,14 +213,16 @@ let deal_with chan p k r =
   let add_sent x = sent := x :: !sent in
   let add_rcvd _ = incr rcvd in
   try
-    send chan (fun x-> Printf.eprintf "HA%!"; p x);
+    send chan (p:unit process);
     track chan k r add_sent add_rcvd
   with _ -> raise (Unfinished (p,k,(List.rev !sent,!rcvd)))
 
 let client_handler s a =
+  let self = Thread.id (Thread.self ()) in
+  let addr = string_of_sockaddr a in
   let chan = channel_of_descr s in
   let disconnected () =
-    Printf.printf "%s disconnected\n%!" (string_of_sockaddr a)
+    Printf.printf "%3.0f:%d:%s disconnected\n%!" (elapsed ()) self addr
   in
   let rec handler () =
     if recv chan then begin
@@ -248,14 +244,14 @@ let client_handler s a =
       end;
       handler () end
   in
-  try handler ()
+  try
+    Printf.printf "%3.0f:%d:Connected to %s\n%!" (elapsed ()) self addr;
+    handler ()
   with _ -> disconnected ()
 
 let rec accepter s =
   let s1,a = accept s in
-  let t = Thread.create (client_handler s1) a in
-  Printf.printf "%.0f:%d:Connected to %s\n%!"
-    (elapsed ()) (Thread.id t) (string_of_sockaddr a);
+  let _ = Thread.create (client_handler s1) a in
   accepter s
 
 let server () =
@@ -285,3 +281,17 @@ let server () =
   ()
 
 let () = if server_name = "" then server ()
+
+(* Connect to server *)
+let chan =
+  try
+    let serv_name = if server_name="" then gethostname() else server_name in
+    let serv = gethostbyname serv_name in
+    let serv_addr = serv.h_addr_list.(0) in
+    let s = socket PF_INET SOCK_STREAM 0 in
+    connect s (ADDR_INET (serv_addr,!port));
+    channel_of_descr s
+  with
+  | Unix_error (ECONNREFUSED,"connect","") ->
+      Printf.eprintf "Server not found";
+      exit 1
