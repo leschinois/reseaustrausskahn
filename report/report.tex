@@ -12,7 +12,7 @@
 
 \begin{document}
 
-\title{Impl\'ementation de r\'eseaux de Kahn}
+\title{Implantation de r\'eseaux de Kahn}
 
 \author{Christophe Cordero, Li-yao Xia}
 
@@ -22,10 +22,10 @@
 
 \smallskip
 
-Nous pr\'esentons maintenant les impl\'ementations dans l'ordre
+Nous pr\'esentons maintenant les implantations dans l'ordre
 o\`u elles ont \'et\'e \'ecrites, qui est aussi, selon nous, dans l'ordre de technicit\'e croissante.
 
-\section{Impl\'ementation s\'equentielle}
+\section{Implantation s\'equentielle}
 
 On repr\'esente un processus par le type suivant :
 
@@ -72,7 +72,7 @@ en retournant le m\^eme processus quand la file {\tt qi} est vide.
 
 \smallskip
 
-Cette impl\'ementation ne pose pas de probl\`eme majeur
+Cette implantation ne pose pas de probl\`eme majeur
 et produit un code tr\`es court.
 
 \section{En utilisant des processus et des tubes}
@@ -102,7 +102,7 @@ de type arbitraire.
 
 \smallskip
 
-Cette impl\'ementation ne fonctionne que si le nombre de processus est
+Cette implantation ne fonctionne que si le nombre de processus est
 born\'e par une constante (nombre de processus que la machine peut g\'erer).
 
 \section{Parall\'elisation sur le r\'eseau en utilisant des {\sl sockets}}
@@ -122,7 +122,7 @@ L'architecture propos\'ee est la suivante :
     par le serveur.
 \end{itemize}
 
-Pour cela on utilise le type suivant, inspir\'e de l'impl\'ementation
+Pour cela on utilise le type suivant, inspir\'e de l'implantation
 s\'equentielle.
 
 \begin{lstlisting}
@@ -182,12 +182,12 @@ Les avantages recherch\'es sont les suivants :
     pour avoir \`a en refaire le moins possible en cas de perte d'un client.
   \item M\^eme avec un seul client connect\'e,
     aucun processus ne doit \^etre suspendu ind\'efiniment.
-    Si des processus peuvent terminer, notre impl\'ementation garantit leur
+    Si des processus peuvent terminer, notre implantation garantit leur
     terminaison lors de l'ex\'ecution du programme, quels que soient
     le nombre de clients connect\'es et le nombre de t\^aches \`a accomplir.
 \end{itemize}
 
-Cela constitue impl\'ementation particuli\`erement souple
+Cela constitue implantation particuli\`erement souple
 du mod\`ele de calcul propos\'e.
 (au prix d'une performance r\'eduite cependant)
 
