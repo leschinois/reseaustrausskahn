@@ -1,0 +1,118 @@
+\documentclass[11pt]{article}
+
+\usepackage[french]{babel}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+
+\usepackage{listings}
+
+\lstset{
+  basicstyle={\ttfamily}
+}
+
+\begin{document}
+
+\title{Impl\'ementation de r\'eseaux de Kahn}
+
+\author{Christophe Cordero, Li-yao Xia}
+
+\maketitle
+
+\section{Composition du projet}
+
+Nous pr\'esentons maintenant les impl\'ementations dans l'ordre
+o\`u elles ont \'et\'e \'ecrites, qui est aussi, selon nous, dans l'ordre de technicit\'e croissante.
+
+\section{Impl\'ementation s\'equentielle}
+
+On repr\'esente un processus par le type suivant :
+
+\begin{lstlisting}
+  type 'a process =
+    | Proc of unit -> 'a process
+    | Res of 'a
+\end{lstlisting}
+
+Le constructeur {\tt Proc} contient une fonction qui effectue
+un pas {\em atomique} de calcul et :
+
+\begin{enumerate}
+  \item Si le calcul n'est pas termin\'e,
+    il renvoie la suite du calcul sous forme d'un autre processus {\tt Proc},
+  \item Sinon, il renvoie le r\'esultat {\tt Res}.
+\end{enumerate}
+
+L'ex\'ecution {\tt run} d'un tel processus est simple :
+on fait avancer le calcul jusqu'\`a obtenir un r\'esultat.
+
+\smallskip
+
+Cette repr\'esentation permet alors de simuler un processus {\tt p}
+obtenu avec la fonction {\tt doco}, qui repr\'esente l\'execution
+parall\`ele d'une liste de processus.
+
+On d\'efinit un pas de calcul atomique pour {\tt p}
+comme l'\'execution d'un pas de calcul pour chacun des processus
+contenus dans la liste en argument de {\tt doco}.
+
+\smallskip
+
+Les canaux communication sont des files.
+
+\begin{lstlisting}
+  type 'a in_port = 'a Queue.t
+  type 'a out_port = 'a Queue.t
+\end{lstlisting}
+
+On remarquera qu'on repr\'esente le blocage d'un processus {\tt get qi}
+en retournant le m\^eme processus quand la file {\tt qi} est vide.
+
+\smallskip
+
+Cette impl\'ementation ne pose pas de probl\`eme majeur
+et produit un code tr\`es court.
+
+\section{En utilisant des processus et des tubes}
+
+On repr\'esente un processus par le type le plus simple :
+
+\begin{lstlisting}
+  type 'a process = unit -> 'a
+\end{lstlisting}
+
+Le parall\'elisme est impl\'ement\'e avec l'utilisation de {\tt Unix.fork}.
+
+\smallskip
+
+Les canaux de communication sont construits \`a l'aide des fonctions
+{\tt Unix.pipe},
+{\tt Unix.in\_channel\_of\_descr}, {\tt Unix.out\_channel\_of\_descr}.
+
+\begin{lstlisting}
+  type 'a in_port = in_channel
+  type 'a out_port = out_channel
+\end{lstlisting}
+
+Les types {\tt in\_channel} et {\tt out\_channel} permettent d'utiliser
+le module {\tt Marshal} directement afin de transf\'erer des valeurs
+de type arbitraire.
+
+\smallskip
+
+Cette impl\'ementation ne fonctionne que si le nombre de processus est
+born\'e par une constante (nombre de processus que la machine peut g\'erer).
+
+\section{Parall\'elisation sur le r\'eseau en utilisant des {\sl sockets}}
+
+L'architecture propos\'ee est la suivante :
+
+\begin{itemize}
+  \item Le programme principal souhaite effectuer un calcul
+    {\tt p:'a process}. Pour cela il cr\'ee un serveur.
+  \item Des programmes clients peuvent se connecter au serveur pour
+    participer au calcul.
+  \item Les programmes clients peuvent \^etre d\'econnect\'es \`a tout moment
+    et le serveur principal doit pouvoir s'adapter pour 
+\end{itemize}
+
+\end{document}
