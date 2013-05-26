@@ -35,6 +35,8 @@ let rec bind p q = function
       | Res (x,m) -> q x m
       | U -> assert false
 
+(* The 'a process has to be processed by the main program for typing issues
+ * When a Doco is encountered, it adds tasks to the server. *)
 let rec run p =
   match p max_int with
   | Doco (l,p) ->

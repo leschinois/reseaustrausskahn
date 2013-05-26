@@ -11,6 +11,7 @@ let ret = function
   | Res ((),_) -> Return U
   | U -> assert false
 
+(* See protocol description in server.ml *)
 let client () =
   try
     let notime = timer < 0. in

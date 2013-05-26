@@ -23,13 +23,17 @@ type response =
 exception Unfinished of unit process * int * (response list * int)
 exception Break
 
+(* In case a process dies, we keep track of
+ * the tokens it consumed with get
+ * and those it produced with put
+ * so that we can repeat the process and keep going afterwards *)
 type past = response list * int
 let no_past:past = [],0
 
-let no_past = [],0
-
 type 'a queue = { fifo : 'a t; mut : Mutex.t}
 
+(* This will encapsulate sockets,
+ * since we rely on Marshal which needs channels *)
 type io_channel = {
   origin : file_descr;
   in_chan : in_channel;
@@ -40,8 +44,6 @@ let elapsed =
   let start = time () in
   fun () -> time () -. start
 
-(* We keep port as a reference because we will find the first available
- * port and need its value in the future *)
 let server_name,port,time_out,timer =
   let port = ref 10000 in
   let server_name = ref "" in
@@ -51,7 +53,7 @@ let server_name,port,time_out,timer =
     [ "-s", Arg.Set_string server_name, "Choose server";
       "-p", Arg.Set_int port, "Choose port";
       "-t", Arg.Set_int time_out,
-        "Maximum number of bindings processed before returning to server";
+        "Maximum number of basic steps processed before returning to server";
       "-time", Arg.Set_float timer,
         "Ends client ASAP after the specified time in seconds.\
         A negative value deactivates the timer (default)."; ]
@@ -59,6 +61,8 @@ let server_name,port,time_out,timer =
   let usage = "UUUU" in
   Arg.parse spec (fun _ -> ()) usage;
   (!server_name,port,!time_out,!timer)
+
+(* Conversion *)
 
 let string_of_sockaddr = function
   | ADDR_UNIX s -> s
@@ -70,6 +74,10 @@ let channel_of_descr s = {
   out_chan=out_channel_of_descr s;
 }
 
+(**)
+
+(* Communicating via sockets *)
+
 let close_c {origin=s} = close s
 
 let send {out_chan=out_chan} x =
@@ -78,6 +86,10 @@ let send {out_chan=out_chan} x =
 
 let recv {in_chan=in_chan} =
   Marshal.from_channel in_chan
+
+(**)
+
+(* Queues with mutex *)
 
 let create () = {fifo=create();mut=Mutex.create()}
 
@@ -94,8 +106,16 @@ let pop {fifo=fifo;mut=mut} =
     Some y
   with Empty -> Mutex.unlock mut; None
 
+(**)
+
+(* Task queue
+ * a task is a process, an identifier of its parent process,
+ * and in the case of previously failed processes, its past communications *)
 let tasks : (unit process * int * past) queue = create ()
 
+(* Ports will be identified with an int
+ * new_channel will request the creation of a new port
+ * and will receive the new identifier *)
 let ports : (int,string queue) Hashtbl.t = Hashtbl.create 100
 
 (* Fresh secure counter *)
@@ -109,15 +129,20 @@ let fresh_create () : unit -> int =
     Mutex.unlock fresh_mutex;
     x
 
+(* New channels *)
 let fresh_chan = fresh_create ()
+
+(* New tasks *)
 let fresh_task = fresh_create ()
 
-(* Keep track of task tree *)
+(* Keep track of the task tree *)
 let tn_mutex = Mutex.create ()
 let tasknumber : (int,int*unit process*int) Hashtbl.t= Hashtbl.create 100
 
-(* Assignate a value to new task list
- * and add it to queue tasks *)
+(**)
+
+(* Assignate a value to new task node
+ * and add its process list to queue tasks *)
 let new_task_list l p k =
   if l <> [] then
     begin
@@ -130,6 +155,7 @@ let new_task_list l p k =
   else
     push (p,k,no_past) tasks
 
+(* Removing one task *)
 let task_out k =
   Mutex.lock tn_mutex;
   let m,p,k2 = Hashtbl.find tasknumber k in
@@ -143,26 +169,28 @@ let task_out k =
       Hashtbl.replace tasknumber k (m-1,p,k2);
     Mutex.unlock tn_mutex
 
+(**)
+
+(* We now focus on the computing management *)
+
+(* Process the answer from client *)
 let unpack k past = function
-  | Proc p -> push (p,k,past) tasks
-  | Doco (l,p) -> new_task_list l p k
+  | Proc p -> push (p,k,past) tasks (* Push back unfinished task *)
+  | Doco (l,p) -> new_task_list l p k (* Setup a new task node *)
   | U -> task_out k
   | Res _ -> assert false
 
+(* Conversing with client.
+ * We open one thread per client.
+ * At the first encountered error, the communication will be closed
+ * (by the next function)
+ * There are two parts to "deal" with the client :
+   * First we check whether the process it has to compute
+   * has previously failed after taking/producing at least one token.
+   * We restart the computation to catch up to the previous failure.
+   * Then the usual state is to answer to the client's requests
+   * (put,get,new_channel,return) *)
 let track chan k (to_send,to_recv) add_sent add_rcvd =
-(*
-  let wait_proc {origin=s} t =
-    let timeout = gettimeofday () +. t in
-    let rec wait_p t =
-      try select [s] [] [] t
-      with Unix_error (EINTR,"select","") ->
-        let rem = timeout -. gettimeofday () in
-        if rem > 0. then wait_p rem
-        else [],[],[]
-    in
-    let r,_,_ = wait_p t in
-    r = []
-  in*)
   let rec deal () =
       Thread.yield ();
       match recv chan with
@@ -207,6 +235,9 @@ let track chan k (to_send,to_recv) add_sent add_rcvd =
   in
   redeal to_send to_recv
 
+(* This function looks for errors.
+ * When one is caught, the process fails and is put back in the queue
+ * with its past *)
 let deal_with chan p k r =
   let sent = ref [] in
   let rcvd = ref 0 in
@@ -217,6 +248,13 @@ let deal_with chan p k r =
     track chan k r add_sent add_rcvd
   with _ -> raise (Unfinished (p,k,(List.rev !sent,!rcvd)))
 
+(* The protocol to communicate is the following :
+  * Once the client has setup a connexion with the server,
+  * it sends a (raw) boolean value (true) to indicate
+  * it is ready to receive a task. (false to end the communication)
+  * The server then replies with another boolean
+  * to transmit whether there are unattended tasks
+  * and sends the corresponding process if it is the case *)
 let client_handler s a =
   let self = Thread.id (Thread.self ()) in
   let addr = string_of_sockaddr a in
@@ -270,7 +308,7 @@ let server () =
     | Unix_error (EADDRINUSE,"bind","") -> incr port
   done;
   listen s 10;
-  (* First connection *)
+  (* First connection with the main program *)
   let first_connect () =
     let s1,_ = accept s in
     let chan = channel_of_descr s1 in

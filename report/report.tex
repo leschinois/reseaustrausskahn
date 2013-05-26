@@ -22,11 +22,27 @@
 
 \begin{itemize}
   \item {\bf skahn/kahn.ml} Implantation s\'equentielle
+  \item {\bf tkahn/kahn.ml} Utilisant des threads (fourni avec le sujet)
   \item {\bf pkahn/kahn.ml} Utilisant des processus et des tubes
-  \item {\bf tkahn/\{server,client,kahn\}.ml} Utilisant des threads
-  \item {\bf nkahn/kahn.ml} Sur le r\'eseau
+  \item {\bf nkahn/\{server, client, kahn\}.ml} Sur le r\'eseau
   \item {\bf i.ml} Signature + d\'efinitions de fonctions auxiliaires
+  \item {\bf demo} Script de d\'emonstration de l'impl\'ementation
+    sur le r\'eseau avec 2 clients.
 \end{itemize}
+
+La commande {\it make file\{.seq, .th, .pipe, .socket\}}
+compile le programme {\bf file.ml} avec l'impl\'ementation correspondante.
+({\it .socket} par d\'efaut)
+
+\smallskip
+
+\begin{enumerate}
+  \item {\it file.socket} lance le programme principal.
+    Un serveur est cr\'ee et attend que des clients se connectent pour
+    effectuer les calculs parall\`eles. Le port ouvert est affich\'e.
+  \item {\it file.socket -s machine -p port} lance un client
+    qui tente de se connecter au port {\it port} de {\it machine}.
+\end{enumerate}
 
 \smallskip
 
@@ -59,12 +75,12 @@ on fait avancer le calcul jusqu'\`a obtenir un r\'esultat.
 \smallskip
 
 Cette repr\'esentation permet alors de simuler un processus {\tt p}
-obtenu avec la fonction {\tt doco}, qui repr\'esente l\'execution
+obtenu avec la fonction {\tt doco}, qui repr\'esente l'ex\'ecution
 parall\`ele d'une liste de processus.
 
-On d\'efinit un pas de calcul atomique pour {\tt p}
-comme l'\'execution d'un pas de calcul pour chacun des processus
-contenus dans la liste en argument de {\tt doco}.
+On d\'efinit un pas de calcul atomique pour {\tt p = doco l}
+comme l'ex\'ecution d'un pas de calcul pour chacun des processus
+contenus dans la liste {\tt l} en argument de {\tt doco}.
 
 \smallskip
 
@@ -77,11 +93,6 @@ Les canaux communication sont des files.
 
 On remarquera qu'on repr\'esente le blocage d'un processus {\tt get qi}
 en retournant le m\^eme processus quand la file {\tt qi} est vide.
-
-\smallskip
-
-Cette implantation ne pose pas de probl\`eme majeur
-et produit un code tr\`es court.
 
 \section{En utilisant des processus et des tubes}
 
@@ -113,7 +124,7 @@ de type arbitraire.
 Cette implantation ne fonctionne que si le nombre de processus est
 born\'e par une constante (nombre de processus que la machine peut g\'erer).
 
-\section{Parall\'elisation sur le r\'eseau en utilisant des {\sl sockets}}
+\section{Parall\'elisation sur le r\'eseau en utilisant des {\em sockets}}
 
 L'architecture propos\'ee est la suivante :
 
@@ -145,7 +156,9 @@ s\'equentielle.
 Laissons le constructeur U de c\^ot\'e pour l'instant.
 
 Un processus est une fonction qui prend en argument {\tt n : int},
-et effectue au maximum {\tt n} pas de calcul avant de retourner:
+et effectue au maximum {\tt n} pas de calcul
+(un pas de calcul est consomm\'e pour chaque liaison {\tt bind} rencontr\'ee)
+avant de retourner:
 
 \begin{enumerate}
   \item Si le calcul n'a pas termin\'e, la suite du calcul.
