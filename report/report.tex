@@ -20,6 +20,8 @@
 
 \section{Composition du projet}
 
+\smallskip
+
 Nous pr\'esentons maintenant les impl\'ementations dans l'ordre
 o\`u elles ont \'et\'e \'ecrites, qui est aussi, selon nous, dans l'ordre de technicit\'e croissante.
 
@@ -112,17 +114,81 @@ L'architecture propos\'ee est la suivante :
     {\tt p:'a process}. Pour cela il cr\'ee un serveur,
   \item Des programmes clients peuvent se connecter au serveur pour
     participer au calcul,
-    (au moins un tel client est n\'ecessaire au progr\`es)
+    (au moins un tel client est n\'ecessaire au progr\`es du calcul)
   \item Les programmes clients peuvent \^etre d\'econnect\'es \`a tout moment
     et le serveur principal doit pouvoir s'adapter \`a ces al\'eas.
+  \item Les programmes clients n'ont pas de moyen de parall\'eliser
+    des t\^aches. Le parall\'elisme est enti\`erement organis\'e
+    par le serveur.
 \end{itemize}
 
 Pour cela on utilise le type suivant, inspir\'e de l'impl\'ementation
 s\'equentielle.
 
 \begin{lstlisting}
-  type 'a process =
-    | Proc
+  type 'a process = int -> 'a result
+  and 'a result =
+    | Proc of 'a process
+    | Doco of unit process list * 'a process
+    | Res of 'a * int
+    | U
 \end{lstlisting}
+
+Laissons le constructeur U de c\^ot\'e pour l'instant.
+
+Un processus est une fonction qui prend en argument {\tt n : int},
+et effectue au maximum {\tt n} pas de calcul avant de retourner:
+
+\begin{enumerate}
+  \item Si le calcul n'a pas termin\'e, la suite du calcul.
+    Il y a deux cas de figure : ou bien le processus a tout simplement
+    consomm\'e tous les pas de calcul disponibles
+    et il renvoie un {\tt Proc},
+    ou bien il doit lancer des processus en parall\`ele, et il s'arr\^ete
+    avant et renvoie la liste des processus parall\`eles,
+    ainsi que le calcul une fois que tous ces processus auront termin\'e.
+    {\tt Doco (l,p)} traduit le processus
+    {\tt bind (doco l) (fun () -> p)}.
+  \item Si le calcul est termin\'e, le r\'esultat {\tt Res}
+    (avec le nombre de pas non consomm\'es),
+\end{enumerate}
+
+Par souci de typage, on impose que la transmission de
+t\^aches sous la forme de processus ne se fasse que pour des valeurs
+de type {\tt unit process}.
+
+Afin d'\'economiser la bande passante,
+le constructeur {\tt U} sert d'alias au r\'esultat {\tt Res ((),\_)}
+dont la premi\`ere composante est constante et la deuxi\`eme superflue.
+(mais utile pour les calculs interm\'ediaires)
+
+\smallskip
+
+L'objectif vis\'e par cette repr\'esentation est
+de permettre aux clients d'interrompre fr\'equemment le calcul.
+
+Les processus constituent des t\^aches.
+
+Les t\^aches sont ex\'ecut\'ees en ordre FIFO.
+L'ex\'ecution peut \^etre partielle,
+auquel cas la suite du calcul est replac\'ee en fin de liste.
+
+\smallskip
+
+Les avantages recherch\'es sont les suivants :
+
+\begin{itemize}
+  \item Le serveur peut sauvegarder les calcul effectu\'es,
+    pour avoir \`a en refaire le moins possible en cas de perte d'un client.
+  \item M\^eme avec un seul client connect\'e,
+    aucun processus ne doit \^etre suspendu ind\'efiniment.
+    Si des processus peuvent terminer, notre impl\'ementation garantit leur
+    terminaison lors de l'ex\'ecution du programme, quels que soient
+    le nombre de clients connect\'es et le nombre de t\^aches \`a accomplir.
+\end{itemize}
+
+Cela constitue impl\'ementation particuli\`erement souple
+du mod\`ele de calcul propos\'e.
+(au prix d'une performance r\'eduite cependant)
 
 \end{document}
