@@ -28,12 +28,13 @@ o\`u elles ont \'et\'e \'ecrites, qui est aussi, selon nous, dans l'ordre de tec
 On repr\'esente un processus par le type suivant :
 
 \begin{lstlisting}
-  type 'a process =
-    | Proc of unit -> 'a process
+  type 'a process = unit -> 'a result
+  and 'a result =
+    | Proc of 'a process
     | Res of 'a
 \end{lstlisting}
 
-Le constructeur {\tt Proc} contient une fonction qui effectue
+Un processus est une fonction qui effectue
 un pas {\em atomique} de calcul et :
 
 \begin{enumerate}
@@ -108,11 +109,20 @@ L'architecture propos\'ee est la suivante :
 
 \begin{itemize}
   \item Le programme principal souhaite effectuer un calcul
-    {\tt p:'a process}. Pour cela il cr\'ee un serveur.
+    {\tt p:'a process}. Pour cela il cr\'ee un serveur,
   \item Des programmes clients peuvent se connecter au serveur pour
-    participer au calcul.
+    participer au calcul,
+    (au moins un tel client est n\'ecessaire au progr\`es)
   \item Les programmes clients peuvent \^etre d\'econnect\'es \`a tout moment
-    et le serveur principal doit pouvoir s'adapter pour 
+    et le serveur principal doit pouvoir s'adapter \`a ces al\'eas.
 \end{itemize}
+
+Pour cela on utilise le type suivant, inspir\'e de l'impl\'ementation
+s\'equentielle.
+
+\begin{lstlisting}
+  type 'a process =
+    | Proc
+\end{lstlisting}
 
 \end{document}
