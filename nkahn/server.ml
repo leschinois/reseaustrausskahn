@@ -21,9 +21,12 @@ type response =
   | Chan of int
 
 exception Unfinished of unit process * int * (response list * int)
+exception Break
 
 type past = response list * int
 let no_past:past = [],0
+
+let no_past = [],0
 
 type 'a queue = { fifo : 'a t; mut : Mutex.t}
 
@@ -147,9 +150,23 @@ let unpack k past = function
   | Res _ -> assert false
 
 let track chan k (to_send,to_recv) add_sent add_rcvd =
+  let wait_proc {origin=s} t =
+    let timeout = gettimeofday () +. t in
+    let rec wait_p t =
+      try select [s] [] [] t
+      with Unix_error (EINTR,"select","") ->
+        let rem = timeout -. gettimeofday () in
+        if rem > 0. then wait_p rem
+        else []
+    in
+    let r,_,_ = wait_p t in
+    r = []
+  in
   let rec deal () =
       Thread.yield ();
       Printf.printf "deal";
+      if wait_proc s 1. then
+        raise Break; (* Program is assumed to be hanging *)
       match recv chan with
       | Put (i,x) ->
       Printf.printf "put\n%!";
