@@ -1,8 +1,6 @@
 open Unix
 open Queue
 
-exception Break
-
 type 'a process =
   | Proc of (int -> 'a process)
   | Doco of (unit process list*'a process)
@@ -15,6 +13,15 @@ type request =
   | New_channel
   | Return of unit process
 
+type response =
+  | Elt of string
+  | Get_resp of string option
+  | Chan of int
+
+exception Unfinished of unit process*int*(response list*int)
+
+let no_past = [],0
+
 type 'a queue = { fifo:'a t; mut:Mutex.t}
 type 'a port = 'a queue
 
@@ -24,36 +31,33 @@ type io_channel = {
   out_chan:out_channel;
 }
 
-let time_out = 10
+let elapsed =
+  let start = time () in
+  fun () -> time () -. start
+
+(* We keep port as a reference because we will find the first available
+ * port and need its value in the future *)
+let server_name,port,time_out,timer =
+  let port = ref 10000 in
+  let server_name = ref "" in
+  let time_out = ref 1000 in
+  let timer = ref (-1.) in
+  let spec =
+    [ "-s", Arg.Set_string server_name, "Choose server";
+      "-p", Arg.Set_int port, "Choose port";
+      "-t", Arg.Set_int time_out,
+        "Maximum number of bindings processed before returning to server";
+      "-time", Arg.Set_float timer,
+        "Ends client ASAP after the specified time in seconds.\
+        A negative value deactivates the timer (default)."; ]
+  in
+  let usage = "UUUU" in
+  Arg.parse spec (fun _ -> ()) usage;
+  (!server_name,port,!time_out,!timer)
 
 let string_of_sockaddr = function
   | ADDR_UNIX s -> s
   | ADDR_INET (i,p) -> Printf.sprintf "%s:%d" (string_of_inet_addr i) p
-
-let sleep_float t =
-  let timeout = gettimeofday () +. t in
-  let rec s t =
-    try ignore (select [] [] [] t)
-    with
-      | Unix_error (EINTR,"select","") ->
-          let now = gettimeofday () in
-          let rem = timeout -. now in
-          if rem > 0. then s rem
-  in s t
-      
-
-(* We keep port as a reference because we will find the first available
- * port and need its value in the future *)
-let server_name,port =
-  let port = ref 10000 in
-  let server_name = ref "" in
-  let spec =
-    [ "-s", Arg.Set_string server_name, "Choose server";
-      "-p", Arg.Set_int port, "Choose port"; ]
-  in
-  let usage = "UUUU" in
-  Arg.parse spec (fun _ -> ()) usage;
-  (!server_name,port)
 
 let channel_of_descr s = {
   origin=s;
@@ -100,7 +104,6 @@ let fresh_create () =
     x
 
 let fresh_chan = fresh_create ()
-
 let fresh_task = fresh_create ()
 
 let tn_mutex = Mutex.create ()
@@ -115,10 +118,10 @@ let new_task_list l p k =
       Mutex.lock tn_mutex;
       Hashtbl.add tasknumber k2 (List.length l,p,k);
       Mutex.unlock tn_mutex;
-      List.iter (fun q -> push (q,k2) tasks) l
+      List.iter (fun q -> push (q,k2,no_past) tasks) l
     end
   else
-    push (p,k) tasks
+    push (p,k,no_past) tasks
 
 let task_out k =
   Mutex.lock tn_mutex;
@@ -126,64 +129,103 @@ let task_out k =
   if m=1 then
     begin
       Hashtbl.remove tasknumber k;
-      if k > -1 (* i.e. not a primitive task *) then
-        push (p,k2) tasks
+      if k2 > -1 (* i.e. not a primitive task *) then
+        push (p,k2,no_past) tasks
     end
     else
       Hashtbl.replace tasknumber k (m-1,p,k2);
     Mutex.unlock tn_mutex
 
-let unpack k = function
-  | Proc _ as p -> push (p,k) tasks
+let unpack k past = function
+  | Proc _ as p -> push (p,k,past) tasks
   | Doco (l,p) -> new_task_list l p k
   | Res ((),_) -> task_out k
 
-let track chan k =
+let track chan k (to_send,to_recv) add_sent add_rcvd =
   let rec deal () =
       Thread.yield ();
       match recv chan with
-      | Put (i,x) -> push x (Hashtbl.find ports i); deal ()
-      | Get i -> send chan (pop (Hashtbl.find ports i)); deal ()
+      | Put (i,x) ->
+          add_rcvd (Elt x);
+          push x (Hashtbl.find ports i);
+          deal ()
+      | Get i ->
+          let y = pop (Hashtbl.find ports i) in
+          add_sent (Get_resp y);
+          send chan y;
+          deal ()
       | New_channel ->
           let c = fresh_chan () in
           Hashtbl.add ports c (create ());
+          add_sent (Chan c);
           send chan c;
           deal ()
-      | Return p -> unpack k p
+      | Return p -> unpack k no_past p
   in
-  deal ()
+  let rec redeal l y =
+    if l = [] && y = 0 then
+      deal ()
+    else begin
+      Thread.yield ();
+      match recv chan,l with
+      | Put (_,_),_ when y > 0 -> redeal l (y-1)
+      | Get _,Get_resp s::t ->
+          send chan s;
+          redeal t y
+      | New_channel,Chan c::t ->
+          send chan c;
+          redeal t y;
+      | Return p,_ ->
+          unpack k (l,y) p
+      | _,_ ->
+          Printf.eprintf "Unexpected replay. \
+            Probably encountered unrecommended operations.";
+          exit 2
+    end
+  in
+  redeal to_send to_recv
 
-let deal_with chan p k =
-  send chan p;
-  track chan k
+let deal_with chan p k r =
+  let sent = ref [] in
+  let rcvd = ref 0 in
+  let add_sent x = sent := x :: !sent in
+  let add_rcvd _ = incr rcvd in
+  try
+    send chan p;
+    track chan k r add_sent add_rcvd
+  with _ -> raise (Unfinished (p,k,(!sent,!rcvd)))
 
-let client_handler s =
+let client_handler s a =
   let chan = channel_of_descr s in
+  let disconnected () =
+    Printf.printf "%s disconnected\n%!" (string_of_sockaddr a)
+  in
   let rec handler () =
-    begin
-      match pop tasks with
-        | Some (p,k) ->
-            begin
-              try deal_with chan p k
-              with
-              | Unix_error (ECONNRESET,s,_) ->
-                  Printf.eprintf "%s" s;
-                  exit 2
-              | Sys_error _
-              | End_of_file ->
-                push (p,k) tasks;
-                close_c chan;
-                Thread.exit ()
-            end
-        | None -> Thread.delay 0.1
-    end;
-    handler ()
-  in handler ()
+    if recv chan then begin
+      begin
+        match pop tasks with
+          | Some (p,k,r) ->
+              begin
+                try deal_with chan p k r
+                with
+                | Unfinished (p,k,r) ->
+                    push (p,k,r) tasks;
+                    close_c chan;
+                    disconnected ();
+                    Thread.exit ()
+              end
+          | None -> Thread.delay 0.1
+      end;
+      handler () end
+  in
+  try handler ()
+  with _ -> disconnected ()
 
 let rec accepter s =
   let s1,a = accept s in
-  Printf.printf "Connected to %s\n%!" (string_of_sockaddr a);
-  ignore (Thread.create client_handler s1);
+  let t = Thread.create (client_handler s1) a in
+  Printf.printf "%.0f:%d:Connected to %s\n%!"
+    (elapsed ()) (Thread.id t) (string_of_sockaddr a);
   accepter s
 
 let server () =
@@ -199,18 +241,17 @@ let server () =
       Printf.printf "Port:%d\n%!" !port;
       cont := false
     with
-      | Unix_error (EADDRINUSE,"bind","") ->
-        incr port
+    | Unix_error (EADDRINUSE,"bind","") -> incr port
   done;
   listen s 10;
   (* First connection *)
   let first_connect () =
     let s1,_ = accept s in
     let chan = channel_of_descr s1 in
-    track chan (-1)
+    ignore (Thread.create accepter s);
+    track chan (-1) no_past (fun _ -> ()) (fun _ -> ())
   in
   let _ = Thread.create first_connect () in
-  let _ = Thread.create accepter s in
   ()
 
 let () = if server_name = "" then server ()

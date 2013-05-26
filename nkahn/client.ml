@@ -15,14 +15,22 @@ let chan =
       Printf.eprintf "Server not found";
       exit 1
 
+let elapsed =
+  let start = gettimeofday () in
+  fun () -> gettimeofday () -. start
+
 let client () =
   try
-    while true do
+    let notime = timer < 0. in
+    while (notime || elapsed ()<timer) do
+      send chan true;
       match (recv chan : unit process) with
         | Proc p -> send chan (Return (p time_out))
         | Doco (_,_) as p -> send chan (Return p)
         | Res _ -> assert false
-    done
+    done;
+    send chan false;
+    exit 0
   with
   | End_of_file
   | Sys_error _
