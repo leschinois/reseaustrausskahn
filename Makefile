@@ -5,6 +5,8 @@ example: example.exe
 
 .PHONY: example
 
+seq: skahn/kahn.ml
+
 %.exe: %.ml skahn/kahn.ml pkahn/kahn.ml nkahn/kahn.ml tkahn/i.cmo
 	$(OC) $(LIBS) -o $@.n -I tkahn -I nkahn\
  tkahn/i.ml nkahn/server.ml nkahn/client.ml nkahn/kahn.ml $<

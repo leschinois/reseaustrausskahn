@@ -16,15 +16,11 @@ let put x i n =
   send chan (Put (i,Marshal.to_string x [Marshal.Closures]));
   Res ((),n)
 
-let rec get o =
-  let rec ask = function
-    | 0 -> Proc (get o)
-    | n ->
-        send chan (Get o);
-        match (recv chan:string option) with
-        | Some x -> Res ((Marshal.from_string x 0),n)
-        | None -> ask (n-1)
-  in ask
+let rec get o n =
+  send chan (Get o);
+  match (recv chan:string option) with
+  | Some x -> Res ((Marshal.from_string x 0),n)
+  | None -> Proc (get o)
 
 let return x n = Res (x,n)
 
