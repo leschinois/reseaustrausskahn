@@ -10,24 +10,21 @@ example: example.socket
 
 .PHONY: example
 
-cc:
-	$(OC) -o $@ $(LIBS) $(FILE)
-
 %.seq: %.ml
 	FILE="$(SFILE)"
-	$(OC) -o $@ $(LIBS) $(FILE) i.ml $<
+	$(OC) -o $@ $(LIBS) $(SFILE) i.ml $<
 
 %.th: %.ml
 	FILE="$(TFILE)"
-	$(OC) -o $@ $(LIBS) $(FILE) i.ml $<
+	$(OC) -o $@ $(LIBS) $(TFILE) i.ml $<
 
 %.pipe: %.ml
 	FILE="$(PFILE)"
-	$(OC) -o $@ $(LIBS) $(FILE) i.ml $<
+	$(OC) -o $@ $(LIBS) $(PFILE) i.ml $<
 
 %.socket: %.ml
 	FILE="$(NFILE)"
-	$(OC) -o $@ $(LIBS) $(FILE) i.ml $<
+	$(OC) -o $@ $(LIBS) $(SFILE) i.ml $<
 
 report: report/report.pdf
 
