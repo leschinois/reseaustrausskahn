@@ -1,7 +1,8 @@
 #!/bin/sh
 make eratosthenes.socket
 echo 2 cores
-PORT=10020
+PORT=10030
 ./eratosthenes.socket -p $PORT &
+sleep 0.5
 ./eratosthenes.socket -p $PORT -s $(hostname) &
 ./eratosthenes.socket -p $PORT -s $(hostname) &

@@ -24,7 +24,7 @@ example: example.socket
 
 %.socket: %.ml
 	FILE="$(NFILE)"
-	$(OC) -o $@ $(LIBS) $(SFILE) i.ml $<
+	$(OC) -o $@ $(LIBS) $(NFILE) i.ml $<
 
 report: report/report.pdf
 
